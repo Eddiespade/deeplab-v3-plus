@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+
 def decode_seg_map_sequence(label_masks, dataset='pascal'):
     rgb_masks = []
     for label_mask in label_masks:
@@ -27,6 +28,9 @@ def decode_segmap(label_mask, dataset, plot=False):
     elif dataset == 'cityscapes':
         n_classes = 19
         label_colours = get_cityscapes_labels()
+    elif dataset == 'ceymo':
+        n_classes = 12
+        label_colours = get_ceymo_labels()
     else:
         raise NotImplementedError
 
@@ -86,6 +90,22 @@ def get_cityscapes_labels():
         [0, 80, 100],
         [0, 0, 230],
         [119, 11, 32]])
+
+
+def get_ceymo_labels():
+    return np.array([
+        [0, 0, 0],
+        [0, 255, 255],
+        [0, 128, 255],
+        [178, 102, 255],
+        [255, 255, 51],
+        [255, 102, 178],
+        [255, 255, 0],
+        [255, 0, 127],
+        [255, 0, 255],
+        [0, 255, 0],
+        [255, 128, 0],
+        [255, 0, 0]])
 
 
 def get_pascal_labels():
