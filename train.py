@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 import numpy as np
 from tqdm import tqdm
 
@@ -93,6 +94,8 @@ class Trainer(object):
 
     def training(self, epoch):
         train_loss = 0.0
+        print(('\033[31m%15s\033[0m' * 5) % ('Epoch', 'Learning rate', 'Previous best', 'Train loss', 'Total loss'))
+        time.sleep(1)
         self.model.train()
         tbar = tqdm(self.train_loader)
         num_img_tr = len(self.train_loader)
@@ -107,7 +110,9 @@ class Trainer(object):
             loss.backward()
             self.optimizer.step()
             train_loss += loss.item()
-            tbar.set_description('Train loss: %.3f' % (train_loss / (i + 1)))
+            tbar.set_description(('%15s' * 1 + '%15.4g' * 4) % (str(epoch) + '/' + str(self.args.epochs),
+                                                                self.scheduler.l, self.best_pred, train_loss / (i + 1),
+                                                                train_loss))
             self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
 
             # Show 10 * 3 inference results each epoch
@@ -116,8 +121,8 @@ class Trainer(object):
                 self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
 
         self.writer.add_scalar('train/total_loss_epoch', train_loss, epoch)
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
-        print('Loss: %.3f' % train_loss)
+        # print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
+        # print('total_loss: %.3f' % train_loss)
 
         if self.args.no_val:
             # save checkpoint every epoch
@@ -131,9 +136,13 @@ class Trainer(object):
 
     def validation(self, epoch):
         self.model.eval()
+        print(('\033[31m%s\033[0m' + '\033[31m%15s\033[0m' * 9) % (
+        'Validation', 'Acc', 'Acc_class', 'mIoU', 'fwIoU', 'P', 'R', 'F1', 'Test loss', 'Total loss'))
+        time.sleep(1)
         self.evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
         test_loss = 0.0
+        Acc, mIoU, Acc_class, FWIoU, P, R, F1 = 0, 0, 0, 0, 0, 0, 0
         for i, sample in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
@@ -142,27 +151,33 @@ class Trainer(object):
                 output = self.model(image)
             loss = self.criterion(output, target)
             test_loss += loss.item()
-            tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
             pred = output.data.cpu().numpy()
             target = target.cpu().numpy()
             pred = np.argmax(pred, axis=1)
             # Add batch sample into evaluator
             self.evaluator.add_batch(target, pred)
 
-        # Fast test during the training
-        Acc = self.evaluator.Pixel_Accuracy()
-        Acc_class = self.evaluator.Pixel_Accuracy_Class()
-        mIoU = self.evaluator.Mean_Intersection_over_Union()
-        FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+            # Fast test during the training
+            Acc = self.evaluator.Pixel_Accuracy()
+            Acc_class = self.evaluator.Pixel_Accuracy_Class()
+            mIoU = self.evaluator.Mean_Intersection_over_Union()
+            FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+            P, R, F1 = self.evaluator.P_R_F1()
+            tbar.set_description(
+                ('%15s' + '%15.4g' * 9) % ("", Acc, Acc_class, mIoU, FWIoU, P, R, F1, test_loss / (i + 1), test_loss))
         self.writer.add_scalar('val/total_loss_epoch', test_loss, epoch)
         self.writer.add_scalar('val/mIoU', mIoU, epoch)
         self.writer.add_scalar('val/Acc', Acc, epoch)
         self.writer.add_scalar('val/Acc_class', Acc_class, epoch)
         self.writer.add_scalar('val/fwIoU', FWIoU, epoch)
-        print('Validation:')
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
-        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
-        print('Loss: %.3f' % test_loss)
+        self.writer.add_scalar('val/Precision', P, epoch)
+        self.writer.add_scalar('val/Recall', R, epoch)
+        self.writer.add_scalar('val/F1_score', F1, epoch)
+        # print('Validation:')
+        # print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
+        # print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        # print("Precision:{}, Recall:{}, F1_score:{}".format(P, R, F1))
+        # print('Loss: %.3f' % test_loss)
 
         new_pred = mIoU
         if new_pred > self.best_pred:
@@ -202,7 +217,7 @@ def main():
                         choices=['ce', 'focal'],
                         help='loss func type (default: ce)')
     # training hyper params
-    parser.add_argument('--epochs', type=int, default=50, metavar='N',
+    parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: auto)')
     parser.add_argument('--start_epoch', type=int, default=0,
                         metavar='N', help='start epochs (default:0)')
@@ -215,9 +230,9 @@ def main():
     parser.add_argument('--use-balanced-weights', action='store_true', default=False,
                         help='whether to use balanced weights (default: False)')
     # optimizer params
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.005, metavar='LR',
                         help='learning rate (default: auto)')
-    parser.add_argument('--lr-scheduler', type=str, default='poly',
+    parser.add_argument('--lr-scheduler', type=str, default='cos',
                         choices=['poly', 'step', 'cos'],
                         help='lr scheduler mode: (default: poly)')
     parser.add_argument('--momentum', type=float, default=0.9,
@@ -237,7 +252,7 @@ def main():
     # checking point
     parser.add_argument('--resume', type=str, default=None,
                         help='put the path to resuming file if needed')
-    parser.add_argument('--checkname', type=str, default='deeplab-mobilenet',
+    parser.add_argument('--checkname', type=str, default='deeplab-xception',
                         help='set the checkpoint name')
     # finetuning pre-trained models
     parser.add_argument('--ft', action='store_true', default=False,
@@ -291,7 +306,7 @@ def main():
     torch.manual_seed(args.seed)
     trainer = Trainer(args)
     print('Starting Epoch:', trainer.args.start_epoch)
-    print('Total Epoches:', trainer.args.epochs)
+    print('Total Epoches:', trainer.args.epochs, end='\n\n')
     for epoch in range(trainer.args.start_epoch, trainer.args.epochs):
         trainer.training(epoch)
         if not trainer.args.no_val and epoch % args.eval_interval == (args.eval_interval - 1):

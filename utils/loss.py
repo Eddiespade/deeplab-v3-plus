@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 
+
 class SegmentationLosses(object):
-    def __init__(self, weight=None, size_average=True, batch_average=True, ignore_index=255, cuda=False):
+    def __init__(self, weight=None, reduction='mean', batch_average=True, ignore_index=255, cuda=False):
         self.ignore_index = ignore_index
         self.weight = weight
-        self.size_average = size_average
+        self.reduction = reduction
         self.batch_average = batch_average
         self.cuda = cuda
 
@@ -21,7 +22,7 @@ class SegmentationLosses(object):
     def CrossEntropyLoss(self, logit, target):
         n, c, h, w = logit.size()
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
-                                        size_average=self.size_average)
+                                        reduction=self.reduction)
         if self.cuda:
             criterion = criterion.cuda()
 
@@ -35,7 +36,7 @@ class SegmentationLosses(object):
     def FocalLoss(self, logit, target, gamma=2, alpha=0.5):
         n, c, h, w = logit.size()
         criterion = nn.CrossEntropyLoss(weight=self.weight, ignore_index=self.ignore_index,
-                                        size_average=self.size_average)
+                                        reduction=self.reduction)
         if self.cuda:
             criterion = criterion.cuda()
 
@@ -50,6 +51,7 @@ class SegmentationLosses(object):
 
         return loss
 
+
 if __name__ == "__main__":
     loss = SegmentationLosses(cuda=True)
     a = torch.rand(1, 3, 7, 7).cuda()
@@ -57,7 +59,3 @@ if __name__ == "__main__":
     print(loss.CrossEntropyLoss(a, b).item())
     print(loss.FocalLoss(a, b, gamma=0, alpha=None).item())
     print(loss.FocalLoss(a, b, gamma=2, alpha=0.5).item())
-
-
-
-
